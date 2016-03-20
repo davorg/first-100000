@@ -1,0 +1,52 @@
+#!/usr/bin/perl -CS
+
+use strict;
+use warnings;
+use 5.010;
+use lib 'lib';
+
+use Scalar::Util 'blessed';
+use First::Twitter;
+
+my $start = shift || 1;
+my $first_iteration = int $start / 100;
+
+my $t = First::Twitter->new(
+  traits          => [ 'API::RESTv1_1', 'OAuth', 'InflateObjects' ],
+  ssl             => 1,
+  consumer_key    => $ENV{FIRST_CON_KEY},
+  consumer_secret => $ENV{FIRST_CON_SEC},
+);
+
+$t->authorise;
+
+for my $x ($first_iteration .. 1000) {
+  my $iteration_start = ($x == $first_iteration) ?
+    $start : (100 * $x) + 1;
+  my $iteration_end = ($x + 1) * 100;
+  my $list = join ',', $iteration_start .. $iteration_end;
+
+  my $resp;
+  eval {
+    $resp = $t->lookup_users({ user_id => $list });
+  };
+  if (my $err = $@) {
+    die $@ unless blessed $err and $err->isa('Net::Twitter::Error');
+    if ($err->code == 404) {
+      warn $err->error;
+      next;
+    }
+    die "HTTP Response Code: ", $err->code, "\n",
+        "HTTP Message......: ", $err->message, "\n",
+        "Twitter error.....: ", $err->error, "\n";
+  }
+
+  foreach (@$resp) {
+    say qq[$_->{id},"$_->{screen_name}","$_->{name}","$_->{location}",],
+      $_->created_at;
+  }
+  unless ($x % 150) {
+    warn "resting at $x\n" if $x;
+    sleep 15 * 60 if $x;
+  }
+}
